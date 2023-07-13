@@ -4,12 +4,15 @@ const db = require("../db.js");
 const User = require("../models/user");
 const Company = require("../models/company");
 const { createToken } = require("../helpers/tokens");
+const Job = require("../models/job.js");
 
+const testJobIds = [];
+
+// reset db before each test, add some test data
 async function commonBeforeAll() {
-  // noinspection SqlWithoutWhere
   await db.query("DELETE FROM users");
-  // noinspection SqlWithoutWhere
   await db.query("DELETE FROM companies");
+  await db.query("DELETE FROM jobs");
 
   await Company.create(
       {
@@ -60,22 +63,45 @@ async function commonBeforeAll() {
     password: "password3",
     isAdmin: false,
   });
+  await User.register({
+    username: "a1",
+    firstName: "a1f",
+    lastName: "a1l",
+    email: "admin1@admin.com",
+    password: "password3",
+    isAdmin: true,
+  });
+  testJobIds[0] = (await Job.create(
+      { title: "Job1", salary: 100000, equity: 0.1, companyHandle: "c1" })).id;
+  await Job.create({
+    title: "Job2",
+    salary: 150000,
+    equity: 0.2,
+    companyHandle: "c2",
+  });  
+
+
 }
 
+// start a sql transaction (transactions will be temporary until committed or rolled back)
 async function commonBeforeEach() {
   await db.query("BEGIN");
 }
 
+// roll back transaction to undo any changes made during the test
 async function commonAfterEach() {
   await db.query("ROLLBACK");
 }
 
+// sever db connection 
 async function commonAfterAll() {
   await db.end();
 }
 
 
 const u1Token = createToken({ username: "u1", isAdmin: false });
+const u2Token = createToken({ username: "u2", isAdmin: false });
+const a1Token = createToken({ username: "a1", isAdmin: true });
 
 
 module.exports = {
@@ -84,4 +110,7 @@ module.exports = {
   commonAfterEach,
   commonAfterAll,
   u1Token,
+  u2Token,
+  a1Token,
+  testJobIds,
 };

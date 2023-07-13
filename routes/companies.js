@@ -6,7 +6,7 @@ const jsonschema = require("jsonschema");
 const express = require("express");
 
 const { BadRequestError } = require("../expressError");
-const { ensureLoggedIn } = require("../middleware/auth");
+const { ensureLoggedIn, ensureAdmin } = require("../middleware/auth");
 const Company = require("../models/company");
 
 const companyNewSchema = require("../schemas/companyNew.json");
@@ -15,16 +15,12 @@ const companyUpdateSchema = require("../schemas/companyUpdate.json");
 const router = new express.Router();
 
 
-/** POST / { company } =>  { company }
- *
- * company should be { handle, name, description, numEmployees, logoUrl }
- *
- * Returns { handle, name, description, numEmployees, logoUrl }
- *
- * Authorization required: login
- */
-
-router.post("/", ensureLoggedIn, async function (req, res, next) {
+/* Creates new company
+POST to /companies 
+{ handle, name, description, numEmployees, logoUrl } =>  { company }
+Authorization required: login
+*/
+router.post("/", ensureAdmin, async function (req, res, next) {
   try {
     const validator = jsonschema.validate(req.body, companyNewSchema);
     if (!validator.valid) {
@@ -39,34 +35,50 @@ router.post("/", ensureLoggedIn, async function (req, res, next) {
   }
 });
 
-/** GET /  =>
- *   { companies: [ { handle, name, description, numEmployees, logoUrl }, ...] }
- *
- * Can filter on provided search filters:
+/* Retreive list of all companies with optional filters
+ GET to /companies  
+ => { companies: [ { handle, name, description, numEmployees, logoUrl }, ...] }
+ * Optional filters can be added to query string:
  * - minEmployees
  * - maxEmployees
- * - nameLike (will find case-insensitive, partial matches)
- *
- * Authorization required: none
- */
-
+ * - nameLike 
+Authorization required: none
+*/
 router.get("/", async function (req, res, next) {
   try {
-    const companies = await Company.findAll();
+    // create filters object from query string, assign int to values, and pass to findAll
+    const filters = req.query;
+    // check if minEmployees filter is present and convert to integer
+    if (filters.minEmployees !== undefined) {
+      filters.minEmployees = parseInt(filters.minEmployees);
+    }
+    // check if maxEmployees filter is present and convert to integer
+    if (filters.maxEmployees !== undefined) {
+      filters.maxEmployees = parseInt(filters.maxEmployees);
+    }
+    // check if minEmployees is greater than maxEmployees & throw error if true
+    if (
+      filters.minEmployees !== undefined &&
+      filters.maxEmployees !== undefined &&
+      filters.minEmployees > filters.maxEmployees
+    ) {
+      throw new BadRequestError(
+        "minEmployees cannot be greater than maxEmployees"
+      );
+    }
+    const companies = await Company.findAll(filters);
     return res.json({ companies });
   } catch (err) {
     return next(err);
   }
 });
 
-/** GET /[handle]  =>  { company }
- *
- *  Company is { handle, name, description, numEmployees, logoUrl, jobs }
- *   where jobs is [{ id, title, salary, equity }, ...]
- *
- * Authorization required: none
- */
 
+
+/* Get information on specific company
+GET /companies/[handle]  =>  { company }
+Authorization required: none
+*/
 router.get("/:handle", async function (req, res, next) {
   try {
     const company = await Company.get(req.params.handle);
@@ -76,18 +88,12 @@ router.get("/:handle", async function (req, res, next) {
   }
 });
 
-/** PATCH /[handle] { fld1, fld2, ... } => { company }
- *
- * Patches company data.
- *
- * fields can be: { name, description, numEmployees, logo_url }
- *
- * Returns { handle, name, description, numEmployees, logo_url }
- *
- * Authorization required: login
- */
-
-router.patch("/:handle", ensureLoggedIn, async function (req, res, next) {
+/* Update company information
+PATCH /companies/[handle] 
+{ name, description, numEmployees, logo_url } => { company }
+Authorization required: login
+*/
+router.patch("/:handle", ensureAdmin, async function (req, res, next) {
   try {
     const validator = jsonschema.validate(req.body, companyUpdateSchema);
     if (!validator.valid) {
@@ -102,12 +108,11 @@ router.patch("/:handle", ensureLoggedIn, async function (req, res, next) {
   }
 });
 
-/** DELETE /[handle]  =>  { deleted: handle }
- *
- * Authorization: login
- */
-
-router.delete("/:handle", ensureLoggedIn, async function (req, res, next) {
+/* Delete a company
+DELETE /[handle]  =>  { deleted: handle }
+Authorization: login
+*/
+router.delete("/:handle", ensureAdmin, async function (req, res, next) {
   try {
     await Company.remove(req.params.handle);
     return res.json({ deleted: req.params.handle });

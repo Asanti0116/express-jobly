@@ -1,80 +1,72 @@
 "use strict";
 
+/** Convenience middleware to handle common auth cases in routes. */
+
 const jwt = require("jsonwebtoken");
+const { SECRET_KEY } = require("../config");
 const { UnauthorizedError } = require("../expressError");
-const {
+
+
+/** Middleware: Authenticate user.
+ * If a token was provided, verify it, and, if valid, store the token payload
+ * on res.locals (this will include the username and isAdmin field.)
+ * no errors passed here, just sets res.locals.user with correct token
+ */
+function authenticateJWT(req, res, next) {
+  try {
+    const authHeader = req.headers && req.headers.authorization;
+    if (authHeader) {
+      const token = authHeader.replace(/^[Bb]earer /, "").trim();
+      res.locals.user = jwt.verify(token, SECRET_KEY);
+    }
+    return next();
+  } catch (err) {
+    return next();
+  }
+}
+
+/** Middleware: Ensure user is logged in.
+ * If not, raises Unauthorized.
+ */
+function ensureLoggedIn(req, res, next) {
+  try {
+    if (!res.locals.user) throw new UnauthorizedError("You must be logged in");
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/** Middleware: Ensure user is an Admin.
+ * If not, raises Unauthorized.
+ */
+function ensureAdmin(req, res, next) {
+  try {
+    if (!res.locals.user || !res.locals.user.isAdmin) throw new UnauthorizedError("Admin privileges required");
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+}
+
+/** Middleware: Check if the user is matching user for that route or an admin.
+ * If not, raises Unauthorized.
+ */
+function ensureCorrectUserOrAdmin(req, res, next) {
+  try {
+    const user = res.locals.user;
+    if (!(user && (user.isAdmin || user.username === req.params.username))) {
+      throw new UnauthorizedError("Access denied - only admins or the correct user can access this route");
+    }
+    return next();
+  } catch (err) {
+    return next(err);
+  }
+}
+
+module.exports = {
   authenticateJWT,
   ensureLoggedIn,
-} = require("./auth");
-
-
-const { SECRET_KEY } = require("../config");
-const testJwt = jwt.sign({ username: "test", isAdmin: false }, SECRET_KEY);
-const badJwt = jwt.sign({ username: "test", isAdmin: false }, "wrong");
-
-
-describe("authenticateJWT", function () {
-  test("works: via header", function () {
-    expect.assertions(2);
-     //there are multiple ways to pass an authorization token, this is how you pass it in the header.
-    //this has been provided to show you another way to pass the token. you are only expected to read this code for this project.
-    const req = { headers: { authorization: `Bearer ${testJwt}` } };
-    const res = { locals: {} };
-    const next = function (err) {
-      expect(err).toBeFalsy();
-    };
-    authenticateJWT(req, res, next);
-    expect(res.locals).toEqual({
-      user: {
-        iat: expect.any(Number),
-        username: "test",
-        isAdmin: false,
-      },
-    });
-  });
-
-  test("works: no header", function () {
-    expect.assertions(2);
-    const req = {};
-    const res = { locals: {} };
-    const next = function (err) {
-      expect(err).toBeFalsy();
-    };
-    authenticateJWT(req, res, next);
-    expect(res.locals).toEqual({});
-  });
-
-  test("works: invalid token", function () {
-    expect.assertions(2);
-    const req = { headers: { authorization: `Bearer ${badJwt}` } };
-    const res = { locals: {} };
-    const next = function (err) {
-      expect(err).toBeFalsy();
-    };
-    authenticateJWT(req, res, next);
-    expect(res.locals).toEqual({});
-  });
-});
-
-
-describe("ensureLoggedIn", function () {
-  test("works", function () {
-    expect.assertions(1);
-    const req = {};
-    const res = { locals: { user: { username: "test", is_admin: false } } };
-    const next = function (err) {
-      expect(err).toBeFalsy();
-    };
-    ensureLoggedIn(req, res, next);
-  });
-
-  test("unauth if no login", function () {
-    expect.assertions(1);
-    const req = {};
-    const res = { locals: {} };
-    const next = function (err) {
-      expect(err instanceof UnauthorizedError).toBeTruthy();
-    };
-    ensureLoggedIn(req, res, next);
-  });
-});
+  ensureAdmin,
+  ensureCorrectUserOrAdmin,
+};

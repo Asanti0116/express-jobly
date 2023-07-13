@@ -1,114 +1,116 @@
 "use strict";
 
-const request = require("supertest");
+const db = require("../db.js");
+const User = require("../models/user");
+const Company = require("../models/company");
+const { createToken } = require("../helpers/tokens");
+const Job = require("../models/job.js");
 
-const app = require("../app");
+const testJobIds = [];
 
-const {
+// reset db before each test, add some test data
+async function commonBeforeAll() {
+  await db.query("DELETE FROM users");
+  await db.query("DELETE FROM companies");
+  await db.query("DELETE FROM jobs");
+
+  await Company.create(
+      {
+        handle: "c1",
+        name: "C1",
+        numEmployees: 1,
+        description: "Desc1",
+        logoUrl: "http://c1.img",
+      });
+  await Company.create(
+      {
+        handle: "c2",
+        name: "C2",
+        numEmployees: 2,
+        description: "Desc2",
+        logoUrl: "http://c2.img",
+      });
+  await Company.create(
+      {
+        handle: "c3",
+        name: "C3",
+        numEmployees: 3,
+        description: "Desc3",
+        logoUrl: "http://c3.img",
+      });
+
+  await User.register({
+    username: "u1",
+    firstName: "U1F",
+    lastName: "U1L",
+    email: "user1@user.com",
+    password: "password1",
+    isAdmin: false,
+  });
+  await User.register({
+    username: "u2",
+    firstName: "U2F",
+    lastName: "U2L",
+    email: "user2@user.com",
+    password: "password2",
+    isAdmin: false,
+  });
+  await User.register({
+    username: "u3",
+    firstName: "U3F",
+    lastName: "U3L",
+    email: "user3@user.com",
+    password: "password3",
+    isAdmin: false,
+  });
+  await User.register({
+    username: "a1",
+    firstName: "a1f",
+    lastName: "a1l",
+    email: "admin1@admin.com",
+    password: "password3",
+    isAdmin: true,
+  });
+  testJobIds[0] = (await Job.create(
+      { title: "Job1", salary: 100000, equity: 0.1, companyHandle: "c1" })).id;
+  await Job.create({
+    title: "Job2",
+    salary: 150000,
+    equity: 0.2,
+    companyHandle: "c2",
+  });  
+
+
+}
+
+// start a sql transaction (transactions will be temporary until committed or rolled back)
+async function commonBeforeEach() {
+  await db.query("BEGIN");
+}
+
+// roll back transaction to undo any changes made during the test
+async function commonAfterEach() {
+  await db.query("ROLLBACK");
+}
+
+// sever db connection 
+async function commonAfterAll() {
+  await db.end();
+}
+
+
+const u1Token = createToken({ username: "u1", isAdmin: false });
+const u2Token = createToken({ username: "u2", isAdmin: false });
+const a1Token = createToken({ username: "a1", isAdmin: true });
+
+
+module.exports = {
   commonBeforeAll,
   commonBeforeEach,
   commonAfterEach,
   commonAfterAll,
-} = require("./_testCommon");
-
-beforeAll(commonBeforeAll);
-beforeEach(commonBeforeEach);
-afterEach(commonAfterEach);
-afterAll(commonAfterAll);
-
-/************************************** POST /auth/token */
-
-describe("POST /auth/token", function () {
-  test("works", async function () {
-    const resp = await request(app)
-        .post("/auth/token")
-        .send({
-          username: "u1",
-          password: "password1",
-        });
-    expect(resp.body).toEqual({
-      "token": expect.any(String),
-    });
-  });
-
-  test("unauth with non-existent user", async function () {
-    const resp = await request(app)
-        .post("/auth/token")
-        .send({
-          username: "no-such-user",
-          password: "password1",
-        });
-    expect(resp.statusCode).toEqual(401);
-  });
-
-  test("unauth with wrong password", async function () {
-    const resp = await request(app)
-        .post("/auth/token")
-        .send({
-          username: "u1",
-          password: "nope",
-        });
-    expect(resp.statusCode).toEqual(401);
-  });
-
-  test("bad request with missing data", async function () {
-    const resp = await request(app)
-        .post("/auth/token")
-        .send({
-          username: "u1",
-        });
-    expect(resp.statusCode).toEqual(400);
-  });
-
-  test("bad request with invalid data", async function () {
-    const resp = await request(app)
-        .post("/auth/token")
-        .send({
-          username: 42,
-          password: "above-is-a-number",
-        });
-    expect(resp.statusCode).toEqual(400);
-  });
-});
-
-/************************************** POST /auth/register */
-
-describe("POST /auth/register", function () {
-  test("works for anon", async function () {
-    const resp = await request(app)
-        .post("/auth/register")
-        .send({
-          username: "new",
-          firstName: "first",
-          lastName: "last",
-          password: "password",
-          email: "new@email.com",
-        });
-    expect(resp.statusCode).toEqual(201);
-    expect(resp.body).toEqual({
-      "token": expect.any(String),
-    });
-  });
-
-  test("bad request with missing fields", async function () {
-    const resp = await request(app)
-        .post("/auth/register")
-        .send({
-          username: "new",
-        });
-    expect(resp.statusCode).toEqual(400);
-  });
-
-  test("bad request with invalid data", async function () {
-    const resp = await request(app)
-        .post("/auth/register")
-        .send({
-          username: "new",
-          firstName: "first",
-          lastName: "last",
-          password: "password",
-          email: "not-an-email",
-        });
-    expect(resp.statusCode).toEqual(400);
-  });
-});
+  u1Token,
+  u2Token,
+  a1Token,
+  testJobIds,
+};

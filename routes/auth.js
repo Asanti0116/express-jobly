@@ -1,66 +1,116 @@
 "use strict";
 
-/** Routes for authentication. */
-
-const jsonschema = require("jsonschema");
-
+const db = require("../db.js");
 const User = require("../models/user");
-const express = require("express");
-const router = new express.Router();
+const Company = require("../models/company");
 const { createToken } = require("../helpers/tokens");
-const userAuthSchema = require("../schemas/userAuth.json");
-const userRegisterSchema = require("../schemas/userRegister.json");
-const { BadRequestError } = require("../expressError");
+const Job = require("../models/job.js");
 
-/** POST /auth/token:  { username, password } => { token }
- *
- * Returns JWT token which can be used to authenticate further requests.
- *
- * Authorization required: none
- */
+const testJobIds = [];
 
-router.post("/token", async function (req, res, next) {
-  try {
-    const validator = jsonschema.validate(req.body, userAuthSchema);
-    if (!validator.valid) {
-      const errs = validator.errors.map(e => e.stack);
-      throw new BadRequestError(errs);
-    }
+// reset db before each test, add some test data
+async function commonBeforeAll() {
+  await db.query("DELETE FROM users");
+  await db.query("DELETE FROM companies");
+  await db.query("DELETE FROM jobs");
 
-    const { username, password } = req.body;
-    const user = await User.authenticate(username, password);
-    const token = createToken(user);
-    return res.json({ token });
-  } catch (err) {
-    return next(err);
-  }
-});
+  await Company.create(
+      {
+        handle: "c1",
+        name: "C1",
+        numEmployees: 1,
+        description: "Desc1",
+        logoUrl: "http://c1.img",
+      });
+  await Company.create(
+      {
+        handle: "c2",
+        name: "C2",
+        numEmployees: 2,
+        description: "Desc2",
+        logoUrl: "http://c2.img",
+      });
+  await Company.create(
+      {
+        handle: "c3",
+        name: "C3",
+        numEmployees: 3,
+        description: "Desc3",
+        logoUrl: "http://c3.img",
+      });
+
+  await User.register({
+    username: "u1",
+    firstName: "U1F",
+    lastName: "U1L",
+    email: "user1@user.com",
+    password: "password1",
+    isAdmin: false,
+  });
+  await User.register({
+    username: "u2",
+    firstName: "U2F",
+    lastName: "U2L",
+    email: "user2@user.com",
+    password: "password2",
+    isAdmin: false,
+  });
+  await User.register({
+    username: "u3",
+    firstName: "U3F",
+    lastName: "U3L",
+    email: "user3@user.com",
+    password: "password3",
+    isAdmin: false,
+  });
+  await User.register({
+    username: "a1",
+    firstName: "a1f",
+    lastName: "a1l",
+    email: "admin1@admin.com",
+    password: "password3",
+    isAdmin: true,
+  });
+  testJobIds[0] = (await Job.create(
+      { title: "Job1", salary: 100000, equity: 0.1, companyHandle: "c1" })).id;
+  await Job.create({
+    title: "Job2",
+    salary: 150000,
+    equity: 0.2,
+    companyHandle: "c2",
+  });  
 
 
-/** POST /auth/register:   { user } => { token }
- *
- * user must include { username, password, firstName, lastName, email }
- *
- * Returns JWT token which can be used to authenticate further requests.
- *
- * Authorization required: none
- */
+}
 
-router.post("/register", async function (req, res, next) {
-  try {
-    const validator = jsonschema.validate(req.body, userRegisterSchema);
-    if (!validator.valid) {
-      const errs = validator.errors.map(e => e.stack);
-      throw new BadRequestError(errs);
-    }
+// start a sql transaction (transactions will be temporary until committed or rolled back)
+async function commonBeforeEach() {
+  await db.query("BEGIN");
+}
 
-    const newUser = await User.register({ ...req.body, isAdmin: false });
-    const token = createToken(newUser);
-    return res.status(201).json({ token });
-  } catch (err) {
-    return next(err);
-  }
-});
+// roll back transaction to undo any changes made during the test
+async function commonAfterEach() {
+  await db.query("ROLLBACK");
+}
+
+// sever db connection 
+async function commonAfterAll() {
+  await db.end();
+}
 
 
-module.exports = router;
+const u1Token = createToken({ username: "u1", isAdmin: false });
+const u2Token = createToken({ username: "u2", isAdmin: false });
+const a1Token = createToken({ username: "a1", isAdmin: true });
+
+
+module.exports = {
+  commonBeforeAll,
+  commonBeforeEach,
+  commonAfterEach,
+  commonAfterAll,
+  u1Token,
+  u2Token,
+  a1Token,
+  testJobIds,
+};
