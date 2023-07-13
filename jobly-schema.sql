@@ -32,3 +32,9 @@ CREATE TABLE applications (
     REFERENCES jobs ON DELETE CASCADE,
   PRIMARY KEY (username, job_id)
 );
+
+-- exercise questions:
+--  NUMERIC type avoids rounding errors (more precise numbers) vs FLOAT type
+--  When NUMERIC type is queried using pg library, it returns a matching string type that we specified
+--  Salary figures are usually stored as integers down to cents, vs
+--  Equity which can be several decimal places (e.g. 0.123456789) so we need numeric type
